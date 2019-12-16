@@ -1,0 +1,14 @@
+version: '3.7'
+services:
+  aws:
+    image: localstack/localstack:latest
+    ports:
+      - '4575:4575' # SNS
+      - '4576:4576' # SQS
+    environment:
+      - SERVICES=sqs,sns
+      - DEFAULT_REGION=us-east-2
+      - AWS_DEFAULT_REGION=us-east-2
+      - AWS_EXECUTION_ENV=True
+    volumes:
+      - './localstack:/tmp/localstack'

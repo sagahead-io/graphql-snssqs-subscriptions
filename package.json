@@ -1,0 +1,48 @@
+{
+  "name": "graphql-snssqs-subscriptions",
+  "version": "0.0.0",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "test": "jest",
+    "build": "npm run clean && npx tsc",
+    "clean": "rm -rf './dist'",
+    "dev": "npx nodemon --watch 'src/**/*.ts' --exec 'ts-node' src/index.ts",
+    "format": "npx prettier --write './src/**/*.{ts,tsx,js,jsx}'",
+    "format:check": "npx prettier --check './src/**/*.{ts,tsx,js,jsx}'",
+    "lint": "npx eslint './src/**/*.{ts,tsx,js,jsx}'"
+  },
+  "files": [
+    "/dist"
+  ],
+  "keywords": [
+    "sqs",
+    "graphql",
+    "subscriptions",
+    "sns",
+    "aws"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "@node-ts/bus-messages": "^0.1.10",
+    "@node-ts/bus-sqs": "^0.3.9",
+    "@types/debug": "^4.1.5",
+    "aws-sdk": "^2.590.0",
+    "debug": "^4.1.1",
+    "graphql-subscriptions": "^1.1.0",
+    "uuid": "^3.3.3"
+  },
+  "devDependencies": {
+    "@types/jest": "^24.0.23",
+    "@types/node": "^12.7.2",
+    "@types/uuid": "^3.4.5",
+    "aws-sdk-mock": "^4.5.0",
+    "jest": "^24.9.0",
+    "jest-emotion": "^10.0.26",
+    "nodemon": "^1.19.1",
+    "sinon": "^7.5.0",
+    "ts-jest": "^24.2.0",
+    "ts-node": "^8.3.0",
+    "typescript": "^3.7.3"
+  }
+}
