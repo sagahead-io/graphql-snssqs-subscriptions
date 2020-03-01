@@ -389,14 +389,14 @@ export class SNSSQSPubSub implements PubSubEngine {
     return `${queuePrefix}${queueRoot}${providedSuffix || ''}`;
   };
 
-  private resolveTopicArnFromMessageName = (topic: string): string => {
+  private resolveTopicArnFromMessageName = (msgTopic: string): string => {
     // if provided topic arn resolve fn
     if (this.options.topicArnResolverFn) {
-      return this.options.topicArnResolverFn(topic);
+      return this.options.topicArnResolverFn(msgTopic);
     }
 
     // topic is itself service
-    if (topic === this.options.serviceName) {
+    if (msgTopic === this.options.serviceName) {
       return this.options.topicArn;
     }
 
@@ -405,12 +405,12 @@ export class SNSSQSPubSub implements PubSubEngine {
       (topic: SNS.Types.Topic) => {
         const topicParts = topic.TopicArn!.split(':');
         const topicName = topicParts[5];
-        return topicName === topic;
+        return topicName === msgTopic;
       }
     );
 
     // return found topic or return given argument
-    return !!result ? result[0].TopicArn! : topic;
+    return !!result ? result[0].TopicArn! : msgTopic;
   };
 
   private resolveTopicFromMessageName = (messageName: string): string => {
