@@ -1,29 +1,28 @@
 jest.mock('aws-sdk');
 import * as AWS from 'aws-sdk-mock';
 import { SQS } from 'aws-sdk';
-import { SNSSQSPubSub } from '../index';
-import { ExtendedPubSubOptions } from '../types';
+import { SNSSQSPubSub, ExtendedPubSubOptions } from '..';
 
 const CreateTopicResult = {
-  TopicArn: 'arn:aws:sns:region:id:TEST_TOPIC_NAME'
+  TopicArn: 'arn:aws:sns:region:id:TEST_TOPIC_NAME',
 };
 
 const CreateQueueResult = {
-  QueueUrl: 'https://sqs.region.amazonaws.com/id/testQueueName'
+  QueueUrl: 'https://sqs.region.amazonaws.com/id/testQueueName',
 };
 
 const GeQueueAttrResult = {
   Attributes: {
-    QueueArn: 'arn:aws:sns:region:id:testQueueArn'
-  }
+    QueueArn: 'arn:aws:sns:region:id:testQueueArn',
+  },
 };
 
 const SubscriptionResult = {
-  SubscriptionArn: 'arn:aws:sns:region:id:TEST_TOPIC_NAME:uuid'
+  SubscriptionArn: 'arn:aws:sns:region:id:TEST_TOPIC_NAME:uuid',
 };
 
 const ListTopicResult = {
-  Topics: [CreateTopicResult]
+  Topics: [CreateTopicResult],
 };
 
 describe('sqs-pub-sub', () => {

@@ -1,8 +1,8 @@
-import { Message, MessageAttributes } from '@node-ts/bus-messages';
+import { Command, Event, Message, MessageAttributes } from '@node-ts/bus-messages';
 import {
   toMessageAttributeMap,
   fromMessageAttributeMap,
-  SQSMessageBody
+  SqsMessageAttributes,
 } from '@node-ts/bus-sqs/dist/sqs-transport';
 import aws, { SQS, SNS } from 'aws-sdk';
 import { PubSubEngine } from 'graphql-subscriptions';
@@ -10,7 +10,8 @@ import { PubSubAsyncIterator } from 'graphql-subscriptions/dist/pubsub-async-ite
 import {
   PubSubOptions,
   ExtendedPubSubOptions,
-  PubSubMessageBody
+  PubSubMessageBody,
+  SNSSQSMessageBody,
 } from './types';
 import { ConfigurationOptions } from 'aws-sdk/lib/config';
 import { ConfigurationServicePlaceholders } from 'aws-sdk/lib/config_service_placeholders';
@@ -36,9 +37,8 @@ export class SNSSQSPubSub implements PubSubEngine {
     queueArn: '',
     topicArn: '',
     subscriptionArn: '',
-    availableTopicsList: []
+    availableTopicsList: [],
   };
-  private pollerId: any = null;
 
   public constructor(
     config: ConfigurationOptions & ConfigurationServicePlaceholders = {},
@@ -48,10 +48,10 @@ export class SNSSQSPubSub implements PubSubEngine {
 
     this.clientConfig = config;
     this.options = { ...this.options, ...pubSubOptions };
-    this.sqs = new aws.SQS({ apiVersion: AWS_SDK_SQS_API_VERSION });
+    this.sqs = new aws.SQS();
 
     if (this.options.withSNS) {
-      this.sns = new aws.SNS({ apiVersion: AWS_SDK_SNS_API_VERSION });
+      this.sns = new aws.SNS();
     }
 
     debug('Pubsub Engine is configured with :', this.options);
@@ -75,7 +75,7 @@ export class SNSSQSPubSub implements PubSubEngine {
   public getOptions = (): ExtendedPubSubOptions => ({ ...this.options });
 
   public getClientConfig = (): SQS.Types.ClientConfiguration => ({
-    ...this.clientConfig
+    ...this.clientConfig,
   });
 
   private setupPolicies = (queueName: string) => {
@@ -98,59 +98,73 @@ export class SNSSQSPubSub implements PubSubEngine {
           Effect: 'Allow',
           Principal: '*',
           Action: 'SQS:*',
-          Resource: queueArn
-        }
-      ]
+          Resource: queueArn,
+        },
+      ],
     };
   };
 
-  public publish = async <MessageType extends Message>(
+  // generic pubsub engine publish method, still works with @node-ts/bus Event/Command
+  async publish<MessageType extends Message>(
     triggerName: string,
-    payload: MessageType,
-    messageAttributes: MessageAttributes = new MessageAttributes()
-  ): Promise<void> => {
-    try {
-      const attributeMap = toMessageAttributeMap({
-        ...messageAttributes,
-        ...{ attributes: { triggerName } }
-      });
-
-      if (this.options.withSNS) {
-        const topicArn = this.getTriggerName(triggerName);
-
-        debug(
-          `Publishing message to topic ${topicArn} with attributes: `,
-          attributeMap
-        );
-
-        const params: SNS.PublishInput = {
-          TopicArn: topicArn,
-          Message: JSON.stringify(payload),
-          MessageAttributes: attributeMap
-        };
-
-        await this.sns.publish(params).promise();
-      } else {
-        const params: SQS.Types.SendMessageRequest = {
-          QueueUrl: this.options.queueUrl,
-          MessageBody: JSON.stringify(payload),
-          MessageAttributes: attributeMap
-        };
-
-        await this.sqs.sendMessage(params).promise();
-      }
-    } catch (error) {
-      debug('Error happened somewhere in publishing', error);
-      return undefined;
+    message: MessageType,
+    messageAttributes?: MessageAttributes
+  ): Promise<void> {
+    if (this.resolveTopicFromMessageName(message.$name) !== triggerName) {
+      console.error('triggerName should be found in message.$name, message was not published.');
+      return;
     }
-  };
+    await this.publishMessage(message, messageAttributes);
+  }
+
+  // same as publish but specific for @node-ts/bus Event
+  async sendEvent<EventType extends Event>(
+    event: EventType,
+    messageAttributes?: MessageAttributes
+  ): Promise<void> {
+    await this.publishMessage(event, messageAttributes);
+  }
+
+  // same as publish but specific for @node-ts/bus Command
+  async sendCommand<CommandType extends Command>(
+    command: CommandType,
+    messageAttributes?: MessageAttributes
+  ): Promise<void> {
+    await this.publishMessage(command, messageAttributes);
+  }
+
+  private async publishMessage(
+    message: Message,
+    messageAttributes: MessageAttributes = new MessageAttributes()
+  ): Promise<void> {
+    const topicName = this.resolveTopicFromMessageName(message.$name);
+    const topicArn = this.resolveTopicArnFromMessageName(topicName);
+    debug('Publishing message to sns', { message, topicArn });
+
+    const attributeMap = toMessageAttributeMap(messageAttributes);
+    debug('Resolved message attributes', { attributeMap });
+
+    const snsEnvelope: SNSSQSMessageBody = {
+      Message: JSON.stringify(message),
+      MessageAttributes: this.attributesToComplyNodeBus(attributeMap),
+    };
+
+    const snsMessage: SNS.PublishInput = {
+      TopicArn: topicArn,
+      Subject: message.$name,
+      Message: JSON.stringify(snsEnvelope),
+      MessageAttributes: attributeMap,
+    };
+    debug('Sending message to SNS', { snsMessage });
+    await this.sns.publish(snsMessage).promise();
+  }
 
   public subscribe = (
     triggerName: string,
     onMessage: (body: PubSubMessageBody) => any
   ): Promise<number> => {
     try {
-      this.poll(triggerName, onMessage);
+      this.pollMessage(triggerName, onMessage);
 
       return Promise.resolve(1);
     } catch (error) {
@@ -162,66 +176,73 @@ export class SNSSQSPubSub implements PubSubEngine {
   public unsubscribe = async (): Promise<void> => {
     if (!this.options.stopped) {
       this.options.stopped = true;
-      this.pollerId = null;
     }
   };
 
-  public readonly poll = async (
-    triggerName: string,
-    onMessage: (body: PubSubMessageBody) => any,
-    stopImmediateLoop?: boolean
+  public readonly pollMessage = async (
+    topic: string,
+    onMessage: (body: PubSubMessageBody) => any
   ): Promise<void> => {
     if (this.options.stopped) {
       return;
     }
 
-    const params = {
-      MessageAttributeNames: ['.*'],
-      WaitTimeSeconds: 10,
+    const params: SQS.ReceiveMessageRequest = {
       QueueUrl: this.options.queueUrl,
+      WaitTimeSeconds: 10,
       MaxNumberOfMessages: 1,
-      AttributeNames: ['ApproximateReceiveCount']
+      MessageAttributeNames: ['.*'],
+      AttributeNames: ['ApproximateReceiveCount'],
     };
 
     const result = await this.sqs.receiveMessage(params).promise();
 
     if (!result.Messages || result.Messages.length === 0) {
-      return undefined;
+      return;
     }
 
     // Only handle the expected number of messages, anything else just return and retry
     if (result.Messages.length > 1) {
       debug('Received more than the expected number of messages', {
         expected: 1,
-        received: result.Messages.length
+        received: result.Messages.length,
       });
-      await Promise.all(
-        result.Messages.map(async message => this.makeMessageVisible(message))
-      );
-      return undefined;
+      await Promise.all(result.Messages.map(async message => this.makeMessageVisible(message)));
+      return;
     }
+    debug('Received result and messages', {
+      result,
+      resultMessages: result.Messages[0],
+      resultMessageAttribute: result.Messages[0].MessageAttributes,
+    });
 
     const sqsMessage = result.Messages[0];
 
     debug('Received message from SQS', { sqsMessage });
 
     try {
-      const snsMessage = JSON.parse(sqsMessage.Body!) as SQSMessageBody;
+      const snsMessage = JSON.parse(sqsMessage.Body) as SNSSQSMessageBody;
 
       if (!snsMessage.Message) {
-        debug(
-          'Message is not formatted with an SNS envelope and will be discarded',
-          { sqsMessage }
-        );
+        debug('Message is not formatted with an SNS envelope and will be discarded', {
+          sqsMessage,
+        });
         await this.deleteMessage(sqsMessage);
-        return undefined;
+        return;
+      }
+
+      const domainMessage = JSON.parse(snsMessage.Message) as Message;
+
+      if (this.resolveTopicFromMessageName(domainMessage.$name) !== topic) {
+        debug('message.$name does not have same topic');
+        return;
       }
 
       const attributes = fromMessageAttributeMap(snsMessage.MessageAttributes);
 
       debug('Received message attributes', {
         transportAttributes: snsMessage.MessageAttributes,
-        messageAttributes: attributes
+        messageAttributes: attributes,
       });
 
       await this.deleteMessage(sqsMessage);
@@ -229,14 +250,9 @@ export class SNSSQSPubSub implements PubSubEngine {
       onMessage({
         id: sqsMessage.MessageId!,
         raw: sqsMessage,
-        domainMessage: JSON.parse(snsMessage.Message) as Message,
-        attributes
+        domainMessage,
+        attributes,
       });
-
-      if (stopImmediateLoop) {
-        clearImmediate(this.pollerId);
-        return undefined;
-      }
     } catch (error) {
       debug(
         "Could not parse message. Message will be retried, though it's likely to end up in the dead letter queue",
@@ -244,12 +260,8 @@ export class SNSSQSPubSub implements PubSubEngine {
       );
 
       await this.makeMessageVisible(sqsMessage);
-      return undefined;
+      return;
     }
-
-    this.pollerId = setImmediate(() =>
-      this.poll(triggerName, onMessage, stopImmediateLoop)
-    );
   };
 
   private createPubSub = async (): Promise<void> => {
@@ -275,16 +287,14 @@ export class SNSSQSPubSub implements PubSubEngine {
           Protocol: 'sqs',
           Endpoint: this.options.queueArn,
           Attributes: {
-            RawMessageDelivery: 'true'
+            RawMessageDelivery: 'true',
           },
-          ReturnSubscriptionArn: true
+          ReturnSubscriptionArn: true,
         })
         .promise();
       this.options.subscriptionArn = SubscriptionArn!;
     } catch (error) {
-      debug(
-        `Unable to subscribe with these options ${this.options}, error: ${error}`
-      );
+      debug(`Unable to subscribe with these options ${this.options}, error: ${error}`);
       return undefined;
     }
 
@@ -303,9 +313,7 @@ export class SNSSQSPubSub implements PubSubEngine {
   private createTopic = async (): Promise<void> => {
     const { serviceName } = this.options;
     try {
-      const { TopicArn } = await this.sns
-        .createTopic({ Name: `${serviceName}` })
-        .promise();
+      const { TopicArn } = await this.sns.createTopic({ Name: `${serviceName}` }).promise();
       this.options.topicArn = TopicArn!;
     } catch (error) {
       debug(`Topic creation failed. ${error}`);
@@ -319,18 +327,18 @@ export class SNSSQSPubSub implements PubSubEngine {
 
     const policy = {
       Policy: JSON.stringify(this.setupPolicies(queueName)),
-      RedrivePolicy: `{"deadLetterTargetArn":"${this.options.dlQueueArn}","maxReceiveCount":"10"}`
+      RedrivePolicy: `{"deadLetterTargetArn":"${this.options.dlQueueArn}","maxReceiveCount":"10"}`,
     };
 
     const params = {
       QueueName: queueName,
       Attributes: {
-        ...policy
-      }
+        ...policy,
+      },
     };
 
     const paramsDLQ = {
-      QueueName: queueNameeDLQ
+      QueueName: queueNameeDLQ,
     };
 
     try {
@@ -348,7 +356,7 @@ export class SNSSQSPubSub implements PubSubEngine {
     const changeVisibilityRequest: SQS.ChangeMessageVisibilityRequest = {
       QueueUrl: this.options.queueUrl,
       ReceiptHandle: sqsMessage.ReceiptHandle!,
-      VisibilityTimeout: this.calculateVisibilityTimeout(sqsMessage)
+      VisibilityTimeout: this.calculateVisibilityTimeout(sqsMessage),
     };
 
     await this.sqs.changeMessageVisibility(changeVisibilityRequest).promise();
@@ -357,7 +365,7 @@ export class SNSSQSPubSub implements PubSubEngine {
   private deleteMessage = async (sqsMessage: SQS.Message): Promise<void> => {
     const params = {
       QueueUrl: this.options.queueUrl,
-      ReceiptHandle: sqsMessage.ReceiptHandle!
+      ReceiptHandle: sqsMessage.ReceiptHandle!,
     };
 
     try {
@@ -381,9 +389,14 @@ export class SNSSQSPubSub implements PubSubEngine {
     return `${queuePrefix}${queueRoot}${providedSuffix || ''}`;
   };
 
-  private getTriggerName = (triggerName: string): string => {
-    // publish message to itself
-    if (triggerName === this.options.serviceName) {
+  private resolveTopicArnFromMessageName = (topic: string): string => {
+    // if provided topic arn resolve fn
+    if (this.options.topicArnResolverFn) {
+      return this.options.topicArnResolverFn(topic);
+    }
+
+    // topic is itself service
+    if (topic === this.options.serviceName) {
       return this.options.topicArn;
     }
 
@@ -392,24 +405,45 @@ export class SNSSQSPubSub implements PubSubEngine {
       (topic: SNS.Types.Topic) => {
         const topicParts = topic.TopicArn!.split(':');
         const topicName = topicParts[5];
-        return topicName === triggerName;
+        return topicName === topic;
       }
     );
 
-    // return found topic or an return given argument
-    return !!result ? result[0].TopicArn! : triggerName;
+    // return found topic or return given argument
+    return !!result ? result[0].TopicArn! : topic;
+  };
+
+  private resolveTopicFromMessageName = (messageName: string): string => {
+    return !!this.options.topicResolverFn
+      ? this.options.topicResolverFn(messageName)
+      : messageName.split('/')[1];
   };
 
   private calculateVisibilityTimeout = (sqsMessage: SQS.Message): number => {
     const currentReceiveCount = parseInt(
-      (sqsMessage.Attributes &&
-        sqsMessage.Attributes.ApproximateReceiveCount) ||
-        '0',
+      (sqsMessage.Attributes && sqsMessage.Attributes.ApproximateReceiveCount) || '0',
       10
     );
     const numberOfFailures = currentReceiveCount + 1;
 
     const delay: number = 5 ^ numberOfFailures; // Delays from 5ms to ~2.5 hrs
     return delay / MILLISECONDS_IN_SECONDS;
+  };
+
+  private attributesToComplyNodeBus = (
+    sqsAttributes: SNS.MessageAttributeMap
+  ): SqsMessageAttributes => {
+    let attributes: SqsMessageAttributes = {};
+
+    Object.keys(sqsAttributes).forEach(key => {
+      const attribute = sqsAttributes[key];
+
+      attributes[key] = {
+        Type: attribute.DataType,
+        Value: attribute.StringValue,
+      };
+    });
+
+    return attributes;
   };
 }

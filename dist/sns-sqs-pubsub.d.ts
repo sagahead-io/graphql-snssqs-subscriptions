@@ -1,0 +1,35 @@
+import { Command, Event, Message, MessageAttributes } from '@node-ts/bus-messages';
+import { SQS, SNS } from 'aws-sdk';
+import { PubSubEngine } from 'graphql-subscriptions';
+import { PubSubOptions, ExtendedPubSubOptions, PubSubMessageBody } from './types';
+import { ConfigurationOptions } from 'aws-sdk/lib/config';
+import { ConfigurationServicePlaceholders } from 'aws-sdk/lib/config_service_placeholders';
+export declare class SNSSQSPubSub implements PubSubEngine {
+    sqs: SQS;
+    sns: SNS;
+    private clientConfig;
+    private options;
+    constructor(config: ConfigurationOptions & ConfigurationServicePlaceholders, pubSubOptions: PubSubOptions);
+    init: () => Promise<void>;
+    asyncIterator: <T>(triggers: string | string[]) => AsyncIterator<T, any, undefined>;
+    getOptions: () => ExtendedPubSubOptions;
+    getClientConfig: () => SQS.ClientConfiguration;
+    private setupPolicies;
+    publish<MessageType extends Message>(triggerName: string, message: MessageType, messageAttributes?: MessageAttributes): Promise<void>;
+    sendEvent<EventType extends Event>(event: EventType, messageAttributes?: MessageAttributes): Promise<void>;
+    sendCommand<CommandType extends Command>(command: CommandType, messageAttributes?: MessageAttributes): Promise<void>;
+    private publishMessage;
+    subscribe: (triggerName: string, onMessage: (body: PubSubMessageBody) => any) => Promise<number>;
+    unsubscribe: () => Promise<void>;
+    readonly pollMessage: (topic: string, onMessage: (body: PubSubMessageBody) => any) => Promise<void>;
+    private createPubSub;
+    private createTopic;
+    private createQueue;
+    private makeMessageVisible;
+    private deleteMessage;
+    private formQueueName;
+    private resolveTopicArnFromMessageName;
+    private resolveTopicFromMessageName;
+    private calculateVisibilityTimeout;
+    private attributesToComplyNodeBus;
+}

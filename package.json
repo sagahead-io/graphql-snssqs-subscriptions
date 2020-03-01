@@ -3,14 +3,19 @@
   "version": "0.0.0",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "author": "Valdas Mazrimas <valdas.mazrimas@gmail.com>",
+  "homepage": "https://github.com/cto2bOpenSource/graphql-snssqs-subscriptions",
   "scripts": {
-    "test": "jest",
-    "build": "npm run clean && npx tsc",
+    "build": "npm run clean && tsc",
     "clean": "rm -rf './dist'",
-    "dev": "npx nodemon --watch 'src/**/*.ts' --exec 'ts-node' src/index.ts",
-    "format": "npx prettier --write './src/**/*.{ts,tsx,js,jsx}'",
-    "format:check": "npx prettier --check './src/**/*.{ts,tsx,js,jsx}'",
-    "lint": "npx eslint './src/**/*.{ts,tsx,js,jsx}'"
+    "dev": "nodemon --watch 'src/**/*.ts' --exec 'ts-node' src/index.ts",
+    "format": "prettier --write './src/**/*.{ts,tsx,js,jsx}'",
+    "format:check": "prettier --check './src/**/*.{ts,tsx,js,jsx}'",
+    "lint": "eslint './src/**/*.{ts,tsx,js,jsx}'",
+    "test": "yarn test:unit && yarn test:integration",
+    "test:unit": "jest \"(src/__test__\\/.+\\.|/)test\\.ts$\"",
+    "test:unit:watch": "yarn run test:unit --watch",
+    "test:integration": "jest \"(src/__integration__\\/.+\\.|/)test\\.ts$\""
   },
   "files": [
     "/dist"
@@ -24,19 +29,23 @@
   ],
   "license": "MIT",
   "dependencies": {
+    "@node-ts/bus-core": "^0.5.1",
     "@node-ts/bus-messages": "^0.1.10",
     "@node-ts/bus-sqs": "^0.3.9",
-    "@types/debug": "^4.1.5",
+    "@node-ts/logger-core": "^0.1.0",
     "aws-sdk": "^2.590.0",
     "debug": "^4.1.1",
     "graphql-subscriptions": "^1.1.0",
+    "reflect-metadata": "^0.1.13",
     "uuid": "^3.3.3"
   },
   "devDependencies": {
+    "@types/debug": "^4.1.5",
+    "@types/inversify": "^2.0.33",
     "@types/jest": "^24.0.23",
     "@types/node": "^12.7.2",
     "@types/uuid": "^3.4.5",
-    "aws-sdk-mock": "^4.5.0",
+    "aws-sdk-mock": "^5.0.0",
     "jest": "^24.9.0",
     "jest-emotion": "^10.0.26",
     "nodemon": "^1.19.1",
@@ -44,5 +53,18 @@
     "ts-jest": "^24.2.0",
     "ts-node": "^8.3.0",
     "typescript": "^3.7.3"
+  },
+  "jest-junit": {
+    "preset": "ts-jest",
+    "setupFilesAfterEnv": [
+      "<rootDir>/test/setup.ts"
+    ],
+    "transformIgnorePatterns": [
+      "[/\\\\]node_modules[/\\\\](?!node-ts.+).+\\.ts$"
+    ],
+    "testRegex": "(src\\/.+\\.|/)(integration|test)\\.ts$",
+    "testMatch": "**/?(*.)+(spec|test|integration).[tj]s?(x)",
+    "testEnvironment": "node",
+    "bail": true
   }
 }
