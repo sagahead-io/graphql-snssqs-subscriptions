@@ -144,15 +144,10 @@ export class SNSSQSPubSub implements PubSubEngine {
     const attributeMap = toMessageAttributeMap(messageAttributes);
     debug('Resolved message attributes', { attributeMap });
 
-    const snsEnvelope: SNSSQSMessageBody = {
-      Message: JSON.stringify(message),
-      MessageAttributes: this.attributesToComplyNodeBus(attributeMap),
-    };
-
     const snsMessage: SNS.PublishInput = {
       TopicArn: topicArn,
       Subject: message.$name,
-      Message: JSON.stringify(snsEnvelope),
+      Message: JSON.stringify(message),
       MessageAttributes: attributeMap,
     };
     debug('Sending message to SNS', { snsMessage });
@@ -221,9 +216,9 @@ export class SNSSQSPubSub implements PubSubEngine {
     debug('Received message from SQS', { sqsMessage });
 
     try {
-      const snsMessage = JSON.parse(sqsMessage.Body) as SNSSQSMessageBody;
+      const snsMessage = JSON.parse(sqsMessage.Body) as Message;
 
-      if (!snsMessage.Message) {
+      if (!snsMessage) {
         debug('Message is not formatted with an SNS envelope and will be discarded', {
           sqsMessage,
         });
@@ -231,17 +226,16 @@ export class SNSSQSPubSub implements PubSubEngine {
         return;
       }
 
-      const domainMessage = JSON.parse(snsMessage.Message) as Message;
-
-      if (this.resolveTopicFromMessageName(domainMessage.$name) !== topic) {
+      if (this.resolveTopicFromMessageName(snsMessage.$name) !== topic) {
         debug('message.$name does not have same topic');
         return;
       }
 
-      const attributes = fromMessageAttributeMap(snsMessage.MessageAttributes);
+      const transformedAttributes = this.attributesToComplyNodeBus(sqsMessage.MessageAttributes);
+      const attributes = fromMessageAttributeMap(transformedAttributes);
 
       debug('Received message attributes', {
-        transportAttributes: snsMessage.MessageAttributes,
+        transportAttributes: sqsMessage.MessageAttributes,
         messageAttributes: attributes,
       });
 
@@ -250,7 +244,7 @@ export class SNSSQSPubSub implements PubSubEngine {
       onMessage({
         id: sqsMessage.MessageId!,
         raw: sqsMessage,
-        domainMessage,
+        domainMessage: snsMessage,
         attributes,
       });
     } catch (error) {

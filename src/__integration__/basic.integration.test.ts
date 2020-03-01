@@ -1,4 +1,4 @@
-import { SNSSQSPubSub, Message, MessageAttributes } from '..';
+import { SNSSQSPubSub, Message, MessageAttributes, PubSubMessageBody } from '..';
 
 const triggerName = 'mytestservicetriggernameaaa';
 
@@ -12,6 +12,20 @@ class SimpleMessage extends Message {
     this.test = test;
   }
 }
+
+const msg = new SimpleMessage('test');
+
+const attributes = new MessageAttributes({
+  attributes: {
+    stringAttr: 'string',
+    numberAttr: 1.24,
+  },
+  correlationId: 'some-correlation-id-1',
+  stickyAttributes: {
+    stickyStrAttr: 'string',
+    stickyNumberAttr: 123,
+  },
+});
 
 describe('sns-sqs-pub-sub basic integraiton', () => {
   it('should work', async done => {
@@ -28,23 +42,12 @@ describe('sns-sqs-pub-sub basic integraiton', () => {
       { serviceName: triggerName }
     );
     await instance.init();
-    await instance.publish(
-      triggerName,
-      new SimpleMessage('test'),
-      new MessageAttributes({
-        attributes: {
-          stringAttr: 'string',
-          numberAttr: 1.24,
-        },
-        correlationId: 'some-correlation-id-1',
-        stickyAttributes: {
-          stickyStrAttr: 'string',
-          stickyNumberAttr: 123,
-        },
-      })
-    );
-    await instance.subscribe(triggerName, (data: any) => {
-      expect(data).toBeDefined();
+    await instance.publish(triggerName, msg, attributes);
+    await instance.subscribe(triggerName, (data: PubSubMessageBody) => {
+      console.log(data);
+      expect(data.raw.MessageId).toEqual(data.id);
+      expect(data.domainMessage).toEqual(new SimpleMessage('test'));
+      expect(data.attributes).toEqual(attributes);
       instance.unsubscribe();
       done();
     });
