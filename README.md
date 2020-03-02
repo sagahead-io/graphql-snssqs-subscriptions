@@ -2,9 +2,15 @@
 
 This package implements the PubSubEngine Interface from the [graphql-subscriptions](https://github.com/apollographql/graphql-subscriptions) package. Once initiated this library automatically create subscriptions between SNS and SQS by the given configuration.
 
+```
+npm install -g graphql-snssqs-subscriptions
+```
+
 ## Simple usage in graphql context with TypeGraphQL
 
-```
+![Graphql Subscriptions](./illustrations/gql.png)
+
+```typescript
 import { MessageAttributes } from 'graphql-snssqs-subscriptions';
 
 class SimpleMessageDTO {
@@ -52,9 +58,9 @@ export class Resolver {
 - More Info on graphql framework [TypeGraphQL]https://typegraphql.ml/docs/introduction.html
 - More Info on service bus framework [@node-ts/bus]https://github.com/node-ts/bus
 
-Ilustrated example:
+![GraphQl and @node-ts/bus](./illustrations/sns-sqs-with-bus.png)
 
-```
+```typescript
 // Service1 Resover
 import { MessageAttributes } from 'graphql-snssqs-subscriptions';
 
@@ -93,7 +99,7 @@ export class Resolver {
 }
 ```
 
-```
+```typescript
 // Service2 Workflows
 ...imports
 class SimpleMessageDTO {
