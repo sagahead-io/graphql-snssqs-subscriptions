@@ -2,9 +2,70 @@
 
 This package implements the PubSubEngine Interface from the [graphql-subscriptions](https://github.com/apollographql/graphql-subscriptions) package. Once initiated this library automatically create subscriptions between SNS and SQS by the given configuration.
 
-```
+```bash
 npm install -g graphql-snssqs-subscriptions
 ```
+
+## Usage
+
+```typescript
+
+// file pubsub.ts
+
+import { SNSSQSPubSub } from 'graphql-snssqs-subscriptions';
+import env from '../utils/env';
+
+export type SNSSQSPubSubType = SNSSQSPubSub;
+
+let awsEndpoints = {};
+
+if (!env.SERVICE_PRODUCTION) {
+  awsEndpoints = {
+    sns: {
+      endpoint: `${env.AWS_SNS_ENDPOINT}`,
+    },
+    sqs: {
+      endpoint: `${env.AWS_SQS_ENDPOINT}`,
+    },
+  };
+}
+
+export const getPubSub = async (): Promise<SNSSQSPubSub> => {
+  const pubsub = new SNSSQSPubSub(
+    {
+      accessKeyId: env.AWS_ACCESS_KEY_ID,
+      secretAccessKey: env.AWS_SECRET_ACCESS_KEY,
+      region: env.AWS_REGION,
+      ...awsEndpoints,
+    },
+    {
+      serviceName: env.SERVICE_NAME,
+    }
+  );
+  await pubsub.init();
+  return pubsub;
+};
+
+
+// file server.ts
+const bootstrap = async () => {
+  const pubSub = await getPubSub();
+
+  const server = new ApolloServer({
+    schema,
+    context: (req: any): MyServiceContext => ({
+      ...req,
+      pubSub, // ctx.pubsub will be available in your service context
+    }),
+  });
+
+  await server.listen(env.SERVICE_PORT);
+  logger.info(`Service is listening on port: ${env.SERVICE_PORT}`);
+};
+
+bootstrap().catch(logger.error);
+```
+
 
 ## Simple usage in graphql context with TypeGraphQL
 
@@ -55,8 +116,8 @@ export class Resolver {
 
 ## Simple usage with TypeGraphQL and @node-ts/bus-workflow
 
-- More Info on graphql framework [TypeGraphQL]https://typegraphql.ml/docs/introduction.html
-- More Info on service bus framework [@node-ts/bus]https://github.com/node-ts/bus
+- More Info on graphql framework [TypeGraphQL](https://typegraphql.ml/docs/introduction.html)
+- More Info on service bus framework [@node-ts/bus](https://github.com/node-ts/bus)
 
 ![GraphQl and @node-ts/bus](./illustrations/sns-sqs-with-bus.png)
 
@@ -101,7 +162,7 @@ export class Resolver {
 
 ```typescript
 // Service2 Workflows
-...imports
+//...imports
 class SimpleMessageDTO {
   readonly $name = `${env.APP_DOMAIN}/${env.MY_SERVICE_NAME}/message-subject-or-anything`;
   readonly $version = 1;
@@ -124,7 +185,7 @@ export class MyWorkflow extends Workflow<MyWorkflowData> {
   }
 
   /**
-   * Starts a new workflow when a account has signed up
+   * Starts a new workflow smessage SimpleMewssageDTO is fired
    */
   @StartedBy<SimpleMessageDTO, MyWorkflowData, 'handleSimpleMessage'>(
     SimpleMessageDTO
@@ -163,7 +224,7 @@ export class MyWorkflow extends Workflow<MyWorkflowData> {
 - Automatically creates subscriptions from SNS to SQS.
 - Automatically creates Dead Letter Queues.
 - Automatically maps MessageAttributes
-- Fully compatable with [@node-ts/bus]https://www.npmjs.com/package/node-ts package
+- Fully compatable with [@node-ts/bus](https://www.npmjs.com/package/node-ts) package
 - Typescript Based
 
 ## Contributing
