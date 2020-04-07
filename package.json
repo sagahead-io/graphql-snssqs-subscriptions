@@ -4,7 +4,7 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "author": "Valdas Mazrimas <valdas.mazrimas@gmail.com>",
-  "homepage": "https://github.com/cto2bOpenSource/graphql-snssqs-subscriptions",
+  "homepage": "https://github.com/sagahead-io/graphql-snssqs-subscriptions",
   "scripts": {
     "build": "npm run clean && tsc",
     "clean": "rm -rf './dist'",
