@@ -5,6 +5,7 @@ import { SQSMessageBody } from '@node-ts/bus-sqs/dist/sqs-transport';
 export type PubSubOptions = {
   serviceName: string;
   withSNS?: boolean;
+  prefix?: string;
 };
 
 export type ExtendedPubSubOptions = {

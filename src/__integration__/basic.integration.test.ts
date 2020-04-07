@@ -1,6 +1,6 @@
 import { SNSSQSPubSub, Message, MessageAttributes, PubSubMessageBody } from '..';
 
-const triggerName = 'mytestservicetriggernameaaa';
+const triggerName = 'service1';
 
 class SimpleMessage extends Message {
   $name = `mydomain/${triggerName}/some-msg-subject`;
@@ -28,7 +28,7 @@ const attributes = new MessageAttributes({
 });
 
 describe('sns-sqs-pub-sub basic integraiton', () => {
-  it('should work', async done => {
+  it('should work', async (done) => {
     const instance = new SNSSQSPubSub(
       {
         region: 'us-east-2',
@@ -39,7 +39,7 @@ describe('sns-sqs-pub-sub basic integraiton', () => {
           endpoint: `http://localhost:4576`,
         },
       },
-      { serviceName: triggerName }
+      { serviceName: triggerName, prefix: 'myprefix' }
     );
     await instance.init();
     await instance.publish(triggerName, msg, attributes);

@@ -7,12 +7,7 @@ import {
 import aws, { SQS, SNS } from 'aws-sdk';
 import { PubSubEngine } from 'graphql-subscriptions';
 import { PubSubAsyncIterator } from 'graphql-subscriptions/dist/pubsub-async-iterator';
-import {
-  PubSubOptions,
-  ExtendedPubSubOptions,
-  PubSubMessageBody,
-  SNSSQSMessageBody,
-} from './types';
+import { PubSubOptions, ExtendedPubSubOptions, PubSubMessageBody } from './types';
 import { ConfigurationOptions } from 'aws-sdk/lib/config';
 import { ConfigurationServicePlaceholders } from 'aws-sdk/lib/config_service_placeholders';
 import Debug from 'debug';
@@ -20,8 +15,6 @@ import Debug from 'debug';
 const debug = Debug('gql-snssqs-subscriptions');
 
 const MILLISECONDS_IN_SECONDS = 1000;
-const AWS_SDK_SQS_API_VERSION = '2012-11-05';
-const AWS_SDK_SNS_API_VERSION = '2010-03-31';
 
 export class SNSSQSPubSub implements PubSubEngine {
   public sqs!: SQS;
@@ -110,9 +103,12 @@ export class SNSSQSPubSub implements PubSubEngine {
     message: MessageType,
     messageAttributes?: MessageAttributes
   ): Promise<void> {
-    if (this.resolveTopicFromMessageName(message.$name) !== triggerName) {
-      console.error('triggerName should be found in message.$name, message was not published.');
-      return;
+    const resolvedMessageName = this.resolveTopicFromMessageName(message.$name);
+    if (resolvedMessageName !== triggerName) {
+      if (resolvedMessageName !== `${this.options.prefix}-${triggerName}`) {
+        console.error('triggerName should be found in message.$name, message was not published.');
+        return;
+      }
     }
     await this.publishMessage(message, messageAttributes);
   }
@@ -202,7 +198,7 @@ export class SNSSQSPubSub implements PubSubEngine {
         expected: 1,
         received: result.Messages.length,
       });
-      await Promise.all(result.Messages.map(async message => this.makeMessageVisible(message)));
+      await Promise.all(result.Messages.map(async (message) => this.makeMessageVisible(message)));
       return;
     }
     debug('Received result and messages', {
@@ -226,9 +222,13 @@ export class SNSSQSPubSub implements PubSubEngine {
         return;
       }
 
-      if (this.resolveTopicFromMessageName(snsMessage.$name) !== topic) {
-        debug('message.$name does not have same topic');
-        return;
+      const msgName = this.resolveTopicFromMessageName(snsMessage.$name);
+
+      if (msgName !== topic) {
+        if (msgName !== `${this.options.prefix}-${topic}`) {
+          debug('message.$name does not have same topic');
+          return;
+        }
       }
 
       const transformedAttributes = this.attributesToComplyNodeBus(sqsMessage.MessageAttributes);
@@ -305,9 +305,12 @@ export class SNSSQSPubSub implements PubSubEngine {
   };
 
   private createTopic = async (): Promise<void> => {
-    const { serviceName } = this.options;
+    const { serviceName, prefix } = this.options;
+    const formedPrefix = prefix ? `${prefix}-` : '';
     try {
-      const { TopicArn } = await this.sns.createTopic({ Name: `${serviceName}` }).promise();
+      const { TopicArn } = await this.sns
+        .createTopic({ Name: `${formedPrefix}${serviceName}` })
+        .promise();
       this.options.topicArn = TopicArn!;
     } catch (error) {
       debug(`Topic creation failed. ${error}`);
@@ -371,16 +374,11 @@ export class SNSSQSPubSub implements PubSubEngine {
   };
 
   private formQueueName = (providedSuffix?: string): string => {
-    const { serviceName } = this.options;
-    const queuePrefix =
-      process.env.NODE_ENV == 'production'
-        ? ''
-        : process.env.NODE_ENV === 'test'
-        ? 'test-'
-        : 'development-';
+    const { serviceName, prefix } = this.options;
     const queueRoot = serviceName;
+    const formedPrefix = prefix ? `${prefix}-` : '';
 
-    return `${queuePrefix}${queueRoot}${providedSuffix || ''}`;
+    return `${formedPrefix}${queueRoot}${providedSuffix || ''}`;
   };
 
   private resolveTopicArnFromMessageName = (msgTopic: string): string => {
@@ -408,9 +406,16 @@ export class SNSSQSPubSub implements PubSubEngine {
   };
 
   private resolveTopicFromMessageName = (messageName: string): string => {
-    return !!this.options.topicResolverFn
+    const { prefix } = this.options;
+    const resolvedTrigger = !!this.options.topicResolverFn
       ? this.options.topicResolverFn(messageName)
       : messageName.split('/')[1];
+
+    if (prefix) {
+      return `${prefix}-${resolvedTrigger}`;
+    }
+
+    return resolvedTrigger;
   };
 
   private calculateVisibilityTimeout = (sqsMessage: SQS.Message): number => {
@@ -429,7 +434,7 @@ export class SNSSQSPubSub implements PubSubEngine {
   ): SqsMessageAttributes => {
     let attributes: SqsMessageAttributes = {};
 
-    Object.keys(sqsAttributes).forEach(key => {
+    Object.keys(sqsAttributes).forEach((key) => {
       const attribute = sqsAttributes[key];
 
       attributes[key] = {
