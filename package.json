@@ -32,7 +32,7 @@
     "@node-ts/bus-messages": "^0.2.2",
     "@node-ts/bus-sqs": "^0.4.2",
     "@node-ts/logger-core": "^0.1.0",
-    "aws-sdk": "^2.654.0",
+    "aws-sdk": "^2.814.0",
     "debug": "^4.1.1",
     "graphql-subscriptions": "^1.1.0",
     "reflect-metadata": "^0.1.13"
